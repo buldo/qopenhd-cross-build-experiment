@@ -1,10 +1,12 @@
 #!/usr/bin/env -S dotnet --
 
+#:property NoWarn=NU1903
 #:package Fallout.Common@10.3.49
 
 using Fallout.Common.IO;
 using Fallout.Common.Tooling;
 using static Fallout.Common.IO.HttpTasks;
+using static Fallout.Common.Tools.Git.GitTasks;
 
 string sysrootFileUrl = "https://dl.cloudsmith.io/public/openhd/dev-release/raw/files/openhd-sysroot-bullseye-arm64.tar.zst";
 
@@ -29,6 +31,19 @@ sysrootDir.CreateOrCleanDirectory();
 
 var tar = ToolResolver.GetPathTool("tar");
 tar($"--exclude=./dev -xf {sysrootFilePath.Name} -C {sysrootDir}", workdir);
+Log("Sysroot created");
+
+var qopenhdDir = workdir / "qopenhd";
+if (qopenhdDir.DirectoryExists())
+{
+    Log("qOpenHD directory already cloned");
+}
+else
+{
+    Log("Cloning qOpenHd");
+    Git("clone --recurse-submodules https://github.com/OpenHD/QOpenHD.git qopenhd", workdir);
+}
+
 
 static void Log(string msg)
 {
