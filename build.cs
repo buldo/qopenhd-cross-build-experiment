@@ -8,44 +8,94 @@ using Fallout.Common.Tooling;
 using static Fallout.Common.IO.HttpTasks;
 using static Fallout.Common.Tools.Git.GitTasks;
 
-string sysrootFileUrl = "https://dl.cloudsmith.io/public/openhd/dev-release/raw/files/openhd-sysroot-bullseye-arm64.tar.zst";
-
-Console.WriteLine("Start building");
-
-var workdir = AbsolutePath.Create(Directory.GetCurrentDirectory()) / "workdir";
-var sysrootFilePath = workdir / sysrootFileUrl.Split('/').Last();
-
-if (sysrootFilePath.FileExists())
+var rootDirectory = AbsolutePath.Create(Directory.GetCurrentDirectory());
+if (!rootDirectory.ContainsFile("build.cs"))
 {
-    Log("Sysroot file exists. Skipping downloading");
-}
-else
-{
-    Log("Downloading sysroot");
-    await HttpDownloadFileAsync(sysrootFileUrl, sysrootFilePath, FileMode.Create, c => {c.Timeout = TimeSpan.FromMinutes(10); return c;});
-    Log("Sysroot downloaded");
+    Log("You have to run script from repo root");
+    return;
 }
 
+var workdir = rootDirectory / "workdir";
 var sysrootDir = workdir / "sysroot";
-sysrootDir.CreateOrCleanDirectory();
 
-var tar = ToolResolver.GetPathTool("tar");
-tar($"--exclude=./dev -xf {sysrootFilePath.Name} -C {sysrootDir}", workdir);
-Log("Sysroot created");
-
-var qopenhdDir = workdir / "qopenhd";
-if (qopenhdDir.DirectoryExists())
+var targetPlatform = new Platform
 {
-    Log("qOpenHD directory already cloned");
-}
-else
-{
-    Log("Cloning qOpenHd");
-    Git("clone --recurse-submodules https://github.com/OpenHD/QOpenHD.git qopenhd", workdir);
-}
+    NameStub = "pi",
+    DebianReleaseName = "bullseye",
+    Arch = "armhf",
+    BuildDeps =
+        [
+            "openhd-qt",
+        ]
+};
 
+CreateSysroot();
+// var qopenhdDir = workdir / "qopenhd";
+// if (qopenhdDir.DirectoryExists())
+// {
+//     Log("qOpenHD directory already cloned");
+// }
+// else
+// {
+//     Log("Cloning qOpenHd");
+//     Git("clone --recurse-submodules https://github.com/OpenHD/QOpenHD.git qopenhd", workdir);
+// }
 
 static void Log(string msg)
 {
     Console.WriteLine(msg);
+}
+
+void CreateSysroot()
+{
+    Log($"Creating sysroot for {sysrootDir.Name}");
+    if (sysrootDir.DirectoryExists())
+    {
+        Log("Sysroot directory already exists");
+        return;
+    }
+
+    Log($"Running mmdebstrap for {sysrootDir.Name}");
+    var sourcesFile = rootDirectory / $"{targetPlatform.NameStub}-{targetPlatform.DebianReleaseName}-{targetPlatform.Arch}.sources.list";
+    if (!sourcesFile.FileExists())
+    {
+        throw new FileNotFoundException($"Source file {sourcesFile} not found");
+    }
+
+    var tempSysrootFileName = workdir / "sysroot.tar";
+    tempSysrootFileName.DeleteFile();
+
+    string[] debstrapArgsArray =
+    [
+        "--mode=unshare",
+        $"--architectures={targetPlatform.Arch}",
+        "--variant=extract",
+        $"--include={string.Join(',',targetPlatform.BuildDeps)}",
+        $"{targetPlatform.DebianReleaseName}",
+        $"{tempSysrootFileName}",
+        $"{sourcesFile}",
+        "-v"
+        ];
+    var debstrapArgs = string.Join(' ', debstrapArgsArray);
+    Log($"Calling {debstrapArgs}");
+
+    var mmdebstrap = ToolResolver.GetPathTool("mmdebstrap");
+    mmdebstrap(debstrapArgs);
+
+    sysrootDir.CreateDirectory();
+    var tar = ToolResolver.GetPathTool("tar");
+    tar($"--exclude=./dev -xf {tempSysrootFileName} -C {sysrootDir}");
+
+    Log("sysroot created");
+}
+
+class Platform
+{
+    public required string NameStub { get; init; }
+
+    public required string DebianReleaseName { get; init; }
+
+    public required string Arch { get; init; }
+
+    public required string[] BuildDeps { get; init; }
 }
