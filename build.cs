@@ -125,7 +125,7 @@ void CreateSysroot()
     Log($"Calling {string.Join(' ', debstrapArgsArray)}");
 
     var mmdebstrap = ToolResolver.GetPathTool("mmdebstrap");
-    mmdebstrap($"{debstrapArgsArray}");
+    mmdebstrap(string.Join(' ', debstrapArgsArray.Select(QuoteArgument)));
 
     sysrootDir.CreateDirectory();
     tar($"--exclude=./dev -xf {tempSysrootFileName} -C {sysrootDir}");
@@ -440,13 +440,18 @@ void Sed(string original, string replace, string path)
     File.WriteAllText(path, text);
 }
 
+static string QuoteArgument(string argument) =>
+   argument.Any(char.IsWhiteSpace) || argument.Contains('"')
+       ? $"\"{argument.Replace("\"", "\\\"")}\""
+       : argument;
+
 class Platform
 {
-    public required string NameStub { get; init; }
+   public required string NameStub { get; init; }
 
-    public required string DebianReleaseName { get; init; }
+   public required string DebianReleaseName { get; init; }
 
-    public required string Arch { get; init; }
+   public required string Arch { get; init; }
 
-    public required string[] BuildDeps { get; init; }
+   public required string[] BuildDeps { get; init; }
 }
