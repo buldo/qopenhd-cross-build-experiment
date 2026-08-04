@@ -115,6 +115,7 @@ void CreateSysroot()
         "--mode=unshare",
         $"--architectures={targetPlatform.Arch}",
         "--variant=extract",
+        "--aptopt=Acquire::ForceIPv4 \"true\"",
         $"--include={string.Join(',',targetPlatform.BuildDeps)}",
         $"{targetPlatform.DebianReleaseName}",
         $"{tempSysrootFileName}",
