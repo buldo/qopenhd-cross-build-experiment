@@ -35,7 +35,8 @@ var targetPlatform = new Platform
         ]
 };
 
-BuildQtHost();
+PrepareGcc();
+//BuildQtHost();
 //CreateSysroot();
 //CloneQOpenHd();
 //BuildQOpenHd();
@@ -43,6 +44,37 @@ BuildQtHost();
 static void Log(string msg)
 {
     Console.WriteLine(msg);
+}
+
+void PrepareGcc()
+{
+    var gccDownloadUrl = "https://toolchains.bootlin.com/downloads/releases/toolchains/armv7-eabihf/tarballs/armv7-eabihf--glibc--bleeding-edge-2020.08-1.tar.bz2";
+    var archiveName = "armv7-eabihf--glibc--bleeding-edge-2020.08-1.tar.bz2";
+    var archivePath = workdir / archiveName;
+    var gccDir = workdir / "gcc-armhf";
+
+    if (archivePath.FileExists())
+    {
+        Log("GCC: Toolchain archive already downloaded");
+    }
+    else
+    {
+        Log("GCC: Downloading toolchain");
+        HttpDownloadFile(gccDownloadUrl, archivePath, FileMode.Create, c => { c.Timeout = TimeSpan.FromMinutes(30); return c; });
+        Log("GCC: Toolchain downloaded");
+    }
+
+    if (gccDir.DirectoryExists())
+    {
+        Log("GCC: Toolchain already extracted");
+    }
+    else
+    {
+        Log("GCC: Extracting toolchain");
+        gccDir.CreateDirectory();
+        tar($"xf {archivePath} -C {gccDir} --strip-components=1", workdir);
+        Log("GCC: Toolchain extracted");
+    }
 }
 
 void CreateSysroot()
