@@ -4,6 +4,7 @@
 #:package Fallout.Common@10.3.49
 
 using System.Diagnostics;
+using System.Linq;
 using Fallout.Common.IO;
 using Fallout.Common.Tooling;
 using static Fallout.Common.IO.HttpTasks;
@@ -12,6 +13,7 @@ using static Fallout.Common.Tools.Git.GitTasks;
 
 var tar = ToolResolver.GetPathTool("tar");
 var make = ToolResolver.GetPathTool("make");
+var dpkgDeb = ToolResolver.GetPathTool("dpkg-deb");
 
 var rootDirectory = AbsolutePath.Create(Directory.GetCurrentDirectory());
 if (!rootDirectory.ContainsFile("build.cs"))
@@ -52,6 +54,7 @@ CreateSysroot();
 CloneQOpenHd();
 ConfigureCrossQmake();
 BuildQOpenHd();
+PackageQOpenHd();
 
 static void Log(string msg)
 {
@@ -255,6 +258,81 @@ void BuildQOpenHd()
         environmentVariables: envVars);
 
     make($"-j{Environment.ProcessorCount}", buildDir, environmentVariables: envVars);
+}
+
+void PackageQOpenHd()
+{
+    Log("Package: Building deb package");
+
+    var qopenhdDir = workdir / "qopenhd";
+    var releaseBinary = qopenhdDir / "build-armhf" / "release" / "QOpenHD";
+    if (!releaseBinary.FileExists())
+    {
+        throw new FileNotFoundException($"Built binary not found at {releaseBinary}");
+    }
+
+    const string packageName = "qopenhd";
+    const string arch = "armhf";
+
+    var pkgRoot = workdir / "qopenhd-pkg";
+    if (pkgRoot.DirectoryExists())
+    {
+        pkgRoot.DeleteDirectory();
+    }
+
+    var binDir = pkgRoot / "usr" / "local" / "bin";
+    var systemdDir = pkgRoot / "etc" / "systemd" / "system";
+    var shareDir = pkgRoot / "usr" / "local" / "share" / "qopenhd";
+    var debianDir = pkgRoot / "DEBIAN";
+    binDir.CreateDirectory();
+    systemdDir.CreateDirectory();
+    shareDir.CreateDirectory();
+    debianDir.CreateDirectory();
+
+    releaseBinary.CopyToDirectory(binDir, ExistsPolicy.FileOverwrite);
+    (qopenhdDir / "systemd" / "h264_decode.service").CopyToDirectory(systemdDir, ExistsPolicy.FileOverwrite);
+    (qopenhdDir / "systemd" / "h265_decode.service").CopyToDirectory(systemdDir, ExistsPolicy.FileOverwrite);
+    File.Copy(qopenhdDir / "systemd" / "rpi_qopenhd.service", systemdDir / "qopenhd.service", overwrite: true);
+    File.Copy(qopenhdDir / "rpi_qt_eglfs_kms_config.json", shareDir / "rpi_qt_eglfs_kms_config.json", overwrite: true);
+
+    var gitHash = Git("rev-parse --short HEAD", qopenhdDir)
+        .First(o => o.Type == OutputType.Std).Text.Trim();
+    var version = $"2.7.1-{DateTime.Now:MM-dd-yyyy--HH-mm-ss}-{gitHash}";
+
+    // Mirrors package.sh's bullseye/raspbian/armhf dependency set
+    string[] depends =
+        [
+            "openhd-userland",
+            "libavcodec-dev",
+            "libavformat-dev",
+            "openhd-qt",
+            "gst-plugins-good",
+            "gst-openhd-plugins",
+            "gstreamer1.0-gl",
+        ];
+
+    (debianDir / "control").WriteAllText(
+        $"Package: {packageName}\n" +
+        $"Version: {version}\n" +
+        "Section: base\n" +
+        "Priority: optional\n" +
+        $"Architecture: {arch}\n" +
+        $"Depends: {string.Join(", ", depends)}\n" +
+        "Maintainer: OpenHD\n" +
+        "Description: QOpenHD ground station application\n");
+
+    File.Copy(qopenhdDir / "after-install.sh", debianDir / "postinst", overwrite: true);
+    File.SetUnixFileMode(
+        debianDir / "postinst",
+        UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+        UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
+        UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+
+    var debFile = workdir / $"{packageName}_{version}_{arch}.deb";
+    debFile.DeleteFile();
+    dpkgDeb($"--build --root-owner-group {pkgRoot} {debFile}");
+
+    Log($"Package: created {debFile}");
 }
 
 void BuildQtHost()
