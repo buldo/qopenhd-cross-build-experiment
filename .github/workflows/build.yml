@@ -1,0 +1,65 @@
+name: Build QOpenHD
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            perl \
+            git \
+            dpkg-dev \
+            mmdebstrap \
+            uidmap
+
+      - name: Allow unprivileged user namespaces (required by mmdebstrap --mode=unshare)
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+
+      - name: Cache toolchain / host Qt / sysroot
+        uses: actions/cache@v4
+        with:
+          path: |
+            workdir/gcc-armhf
+            workdir/qt5-bin
+            workdir/sysroot
+            workdir/*.tar.bz2
+            workdir/*.tar.xz
+          key: qopenhd-toolchain-${{ hashFiles('build.cs', 'pi-bullseye-armhf.sources.list') }}
+
+      - name: Run build.cs
+        run: dotnet run build.cs
+
+      - name: Zip release folder
+        run: |
+          cd workdir/qopenhd/build-armhf/release
+          zip -r "$GITHUB_WORKSPACE/qopenhd-release-armhf.zip" .
+
+      - name: Upload deb package
+        uses: actions/upload-artifact@v4
+        with:
+          name: qopenhd-deb
+          path: workdir/*.deb
+          if-no-files-found: error
+
+      - name: Upload release folder
+        uses: actions/upload-artifact@v4
+        with:
+          name: qopenhd-release-armhf
+          path: qopenhd-release-armhf.zip
+          if-no-files-found: error
