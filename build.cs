@@ -116,17 +116,16 @@ void CreateSysroot()
         $"--architectures={targetPlatform.Arch}",
         "--variant=extract",
         "--aptopt=Acquire::ForceIPv4 \"true\"",
-        $"--include={string.Join(',',targetPlatform.BuildDeps)}",
-        $"{targetPlatform.DebianReleaseName}",
-        $"{tempSysrootFileName}",
-        $"{sourcesFile}",
+        $"--include={string.Join(',', targetPlatform.BuildDeps)}",
+        targetPlatform.DebianReleaseName,
+        tempSysrootFileName,
+        sourcesFile,
         "-v"
-        ];
-    var debstrapArgs = string.Join(' ', debstrapArgsArray);
-    Log($"Calling {debstrapArgs}");
+    ];
+    Log($"Calling {string.Join(' ', debstrapArgsArray)}");
 
     var mmdebstrap = ToolResolver.GetPathTool("mmdebstrap");
-    mmdebstrap(debstrapArgs);
+    mmdebstrap($"{debstrapArgsArray}");
 
     sysrootDir.CreateDirectory();
     tar($"--exclude=./dev -xf {tempSysrootFileName} -C {sysrootDir}");
