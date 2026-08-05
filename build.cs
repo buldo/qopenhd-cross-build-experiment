@@ -110,23 +110,18 @@ void CreateSysroot()
     var tempSysrootFileName = workdir / "sysroot.tar";
     tempSysrootFileName.DeleteFile();
 
-    string[] debstrapArgsArray =
-    [
-        "--mode=unshare",
-        $"--architectures={targetPlatform.Arch}",
-        "--variant=extract",
-        "--aptopt=Acquire::ForceIPv4 \"true\"",
-        $"--include={string.Join(',',targetPlatform.BuildDeps)}",
-        $"{targetPlatform.DebianReleaseName}",
-        $"{tempSysrootFileName}",
-        $"{sourcesFile}",
-        "-v"
-        ];
-    var debstrapArgs = string.Join(' ', debstrapArgsArray);
-    Log($"Calling {debstrapArgs}");
+    // mmdebstrap's --aptopt value mirrors an apt.conf line and needs its own embedded double quotes.
+    // Fallout's Tool(string) overload joins pre-built argument strings into ONE plain string, which is
+    // then wrapped+escaped as a single opaque token by ArgumentStringHandler as soon as it contains a
+    // stray '"' - collapsing the whole command line into one broken argv element for mmdebstrap
+    // (observed as "E: invalid mode"). Interpolating each argument as its own placeholder instead lets
+    // the handler quote/escape only this token, keeping every other argument as a separate argv entry.
+    var aptOpt = "--aptopt=Acquire::ForceIPv4 \"true\"";
+    var includeOpt = $"--include={string.Join(',', targetPlatform.BuildDeps)}";
 
     var mmdebstrap = ToolResolver.GetPathTool("mmdebstrap");
-    mmdebstrap(debstrapArgs);
+    mmdebstrap($"--mode=unshare --architectures={targetPlatform.Arch} --variant=extract " +
+               $"{aptOpt} {includeOpt} {targetPlatform.DebianReleaseName} {tempSysrootFileName} {sourcesFile} -v");
 
     sysrootDir.CreateDirectory();
     tar($"--exclude=./dev -xf {tempSysrootFileName} -C {sysrootDir}");
